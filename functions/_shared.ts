@@ -38,7 +38,7 @@ export function randomId(prefix: string) {
 export async function verifySupabaseBearer(ctx: PagesContext) {
   const supabaseUrl = ctx.env.SUPABASE_URL?.trim().replace(/\/+$/, '');
   const anonKey = ctx.env.SUPABASE_ANON_KEY?.trim();
-  if (!supabaseUrl || !anonKey) return { ok: true as const };
+  if (!supabaseUrl || !anonKey) return { ok: false as const };
   const header = ctx.request.headers.get('Authorization') || '';
   if (!header.startsWith('Bearer ')) return { ok: false as const };
   const response = await fetch(`${supabaseUrl}/auth/v1/user`, {

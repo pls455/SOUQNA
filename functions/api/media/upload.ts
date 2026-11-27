@@ -12,6 +12,7 @@ export const onRequestPost = async (ctx: PagesContext) => {
   if (!body.length || body.length > 5 * 1024 * 1024) return json({ ok: false, error: 'حجم الصورة يجب أن يكون أقل من 5 ميجابايت.' }, 400);
   if (!hasValidImageSignature(body, contentType)) return json({ ok: false, error: 'محتوى الملف لا يطابق صورة صالحة.' }, 400);
   const folder = allowedFolder(new URL(ctx.request.url).searchParams.get('folder'));
+  if (folder === 'proofs') return json({ ok: false, error: 'رفع مستندات الإثبات الخاصة غير متاح عبر bucket الصور العام.' }, 403);
   const key = `${folder}/${Date.now()}-${randomId('img')}.${extensionForType(contentType)}`;
   await ctx.env.MEDIA_BUCKET.put(key, body, { httpMetadata: { contentType } });
   return json({ ok: true, configured: true, key, url: `${ctx.env.R2_PUBLIC_URL.replace(/\/+$/, '')}/${key}` });

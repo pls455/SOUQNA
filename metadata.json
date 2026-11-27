@@ -1,0 +1,6 @@
+{
+  "name": "سوقنا — نموذج تفاعلي لمنصة المتاجر",
+  "description": "نموذج تفاعلي متكامل لمنصة سوقنا متعدد المتاجر يشمل واجهات المشتري ونظام التصميم، واجهات التاجر، ولوحة الإدارة بتدفقات مرتبطة.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -33,6 +33,29 @@ export async function getSupabaseAccessToken(): Promise<string | null> {
   return session?.access_token ?? null;
 }
 
+export type SupabaseProfile = {
+  id: string;
+  full_name: string;
+  email: string;
+  role: string;
+  status: 'active' | 'blocked';
+  region: string;
+};
+
+export async function getSupabaseProfile(userId?: string): Promise<SupabaseProfile | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  const user = userId ? { id: userId } : (await client.auth.getUser()).data.user;
+  if (!user) return null;
+  const { data, error } = await client
+    .from('profiles')
+    .select('id, full_name, email, role, status, region')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as SupabaseProfile;
+}
+
 export async function signInSupabaseEmail(email: string, password: string): Promise<{
   user: User | null;
   error?: string;
@@ -78,4 +101,18 @@ export async function signOutSupabase(): Promise<void> {
   const client = getSupabaseClient();
   if (!client) return;
   await client.auth.signOut();
+}
+
+export async function inviteTeamMember(params: {
+  action: 'platform_admin' | 'store_staff';
+  email: string;
+  fullName: string;
+  storeId?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { ok: false, error: 'Supabase غير مربوط بعد عبر متغيرات البيئة.' };
+  const { data, error } = await client.functions.invoke('invite-team-member', { body: params });
+  if (error) return { ok: false, error: error.message };
+  if (!data?.ok) return { ok: false, error: data?.error || 'تعذر إرسال الدعوة.' };
+  return { ok: true };
 }

@@ -1,5 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { isSupabaseConfigured } from '../lib/supabaseClient';
+import {
+  getSupabaseClient,
+  getSupabaseProfile,
+  isSupabaseConfigured,
+  signOutSupabase,
+  type SupabaseProfile,
+} from '../lib/supabaseClient';
 import {
   localMarketplaceRepository,
   type BuyerAccountState,
@@ -123,6 +129,9 @@ interface MarketplaceContextValue {
   platformSettings: PlatformSettings;
   adminAuthenticated: boolean;
   setAdminAuthenticated: (v: boolean) => void;
+  authProfile: SupabaseProfile | null;
+  authLoading: boolean;
+  signOut: () => Promise<void>;
 
   // Toast feedback
   toast: { id: number; message: string; tone: 'success' | 'info' | 'danger' } | null;
@@ -224,9 +233,44 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
   const [complaints, setComplaints] = useState<OrderComplaint[]>(initialSnap.complaints);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(initialSnap.auditLogs);
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings>(initialSnap.platformSettings);
-  const [adminAuthenticated, setAdminAuthenticated] = useState<boolean>(true);
+  const [adminAuthenticated, setAdminAuthenticated] = useState<boolean>(false);
+  const [authProfile, setAuthProfile] = useState<SupabaseProfile | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [cartFeedbackCount, setCartFeedbackCount] = useState<number>(0);
   const [toast, setToast] = useState<{ id: number; message: string; tone: 'success' | 'info' | 'danger' } | null>(null);
+
+  useEffect(() => {
+    const client = getSupabaseClient();
+    if (!client) {
+      setAuthLoading(false);
+      return;
+    }
+    let active = true;
+    const syncAuth = async () => {
+      const profile = await getSupabaseProfile();
+      if (!active) return;
+      setAuthProfile(profile);
+      setAdminAuthenticated(Boolean(profile && ['platform_owner', 'platform_admin', 'admin'].includes(profile.role) && profile.status === 'active'));
+      setAuthLoading(false);
+    };
+    void syncAuth();
+    const { data } = client.auth.onAuthStateChange(() => {
+      void syncAuth();
+    });
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
+  }, []);
+
+  const signOut = async () => {
+    await signOutSupabase();
+    setAuthProfile(null);
+    setAdminAuthenticated(false);
+    setAdminScreen('login');
+    setMerchantScreen('auth');
+    setWorkspace('buyer');
+  };
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
@@ -933,6 +977,9 @@ export function MarketplaceProvider({ children }: { children: React.ReactNode })
         platformSettings,
         adminAuthenticated,
         setAdminAuthenticated,
+        authProfile,
+        authLoading,
+        signOut,
         toast,
         showToast,
         resetDemoData,

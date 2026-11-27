@@ -50,6 +50,7 @@ import {
 } from '../ui/DesignSystemKit';
 import { HeroReveal, PageTransition, TextMaskReveal } from '../ui/MotionPrimitives';
 import { MerchantAnalyticsCharts } from './MerchantAnalyticsCharts';
+import { getSupabaseProfile, inviteTeamMember, signInSupabaseEmail } from '../../lib/supabaseClient';
 
 export function MerchantApp() {
   const {
@@ -81,6 +82,8 @@ export function MerchantApp() {
     updateStoreSettings,
     toggleStoreFeatured,
     showToast,
+    signOut,
+    authProfile,
   } = useMarketplace();
 
   const currentStore =
@@ -98,6 +101,8 @@ export function MerchantApp() {
   const [authTab, setAuthTab] = useState<'login' | 'register' | 'forgot'>('register');
   const [loginEmail, setLoginEmail] = useState('sales@oliveharvest.ps');
   const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
 
@@ -176,6 +181,7 @@ export function MerchantApp() {
     manageOrders: true,
     viewAnalytics: true,
   });
+  const [staffInviteLoading, setStaffInviteLoading] = useState(false);
 
   // Settings form
   const [settingsName, setSettingsName] = useState(currentStore?.name || '');
@@ -270,13 +276,23 @@ export function MerchantApp() {
             <Button
               variant="primary"
               className="w-full"
-              onClick={() => {
+              onClick={async () => {
+                setLoginError(null);
+                setLoginLoading(true);
+                const result = await signInSupabaseEmail(loginEmail.trim(), loginPassword);
+                const profile = result.user ? await getSupabaseProfile(result.user.id) : null;
+                setLoginLoading(false);
+                if (!result.user || !profile || profile.status !== 'active' || !['merchant', 'store_owner', 'store_manager', 'store_staff'].includes(profile.role)) {
+                  setLoginError(result.error || 'هذا الحساب لا يملك صلاحية دخول بوابة التاجر.');
+                  return;
+                }
                 showToast('تم تسجيل الدخول إلى لوحة التاجر', 'success');
                 setMerchantScreen('dashboard');
               }}
             >
-              تسجيل الدخول
+              {loginLoading ? 'جارٍ التحقق...' : 'تسجيل الدخول'}
             </Button>
+            {loginError && <div className="text-xs font-semibold text-[#B54747]">{loginError}</div>}
           </div>
         )}
 
@@ -1333,9 +1349,21 @@ export function MerchantApp() {
           onClose={() => setStaffModalOpen(false)}
         >
           <form
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
               if (!staffForm.name.trim() || !staffForm.email.trim()) return;
+              setStaffInviteLoading(true);
+              const invitation = await inviteTeamMember({
+                action: 'store_staff',
+                fullName: staffForm.name.trim(),
+                email: staffForm.email.trim(),
+                storeId: currentStore.id,
+              });
+              setStaffInviteLoading(false);
+              if (!invitation.ok) {
+                showToast(invitation.error || 'تعذر إرسال دعوة الموظف.', 'danger');
+                return;
+              }
               addStaffMember({
                 storeId: currentStore.id,
                 name: staffForm.name.trim(),
@@ -1407,8 +1435,8 @@ export function MerchantApp() {
               <Button variant="ghost" type="button" onClick={() => setStaffModalOpen(false)}>
                 إلغاء
               </Button>
-              <Button variant="primary" type="submit">
-                حفظ الموظف
+              <Button variant="primary" type="submit" disabled={staffInviteLoading}>
+                {staffInviteLoading ? 'جارٍ إرسال الدعوة...' : 'إرسال دعوة الموظف'}
               </Button>
             </div>
           </form>
@@ -1490,7 +1518,7 @@ export function MerchantApp() {
           <Button
             variant="outline"
             className="w-full text-[#B54747]"
-            onClick={() => setMerchantScreen('auth')}
+            onClick={() => void signOut()}
           >
             تسجيل الخروج
           </Button>
@@ -1499,7 +1527,14 @@ export function MerchantApp() {
     );
   };
 
+  const merchantAuthorized = Boolean(
+    authProfile &&
+      authProfile.status === 'active' &&
+      ['merchant', 'store_owner', 'store_manager', 'store_staff'].includes(authProfile.role)
+  );
+
   const renderScreen = () => {
+    if (!merchantAuthorized && merchantScreen !== 'auth') return renderAuth();
     switch (merchantScreen) {
       case 'auth':
         return renderAuth();

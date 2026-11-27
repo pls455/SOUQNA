@@ -50,6 +50,7 @@ import {
   VerifiedBadge,
 } from '../ui/DesignSystemKit';
 import { PageTransition, SmoothMenuOverlay } from '../ui/MotionPrimitives';
+import { getSupabaseProfile, inviteTeamMember, signInSupabaseEmail } from '../../lib/supabaseClient';
 
 const ADMIN_NAV_ITEMS: { id: AdminScreenId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'dashboard', label: 'لوحة المؤشرات', icon: LayoutDashboard },
@@ -106,13 +107,21 @@ export function AdminApp() {
     toggleUserStatus,
     updatePlatformSettings,
     resetDemoData,
+    signOut,
+    authProfile,
+    showToast,
   } = useMarketplace();
 
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Login screen form
-  const [adminEmail, setAdminEmail] = useState('admin@souqna.ps');
-  const [adminPass, setAdminPass] = useState('••••••••');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPass, setAdminPass] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [managerName, setManagerName] = useState('');
+  const [managerEmail, setManagerEmail] = useState('');
+  const [managerInviteLoading, setManagerInviteLoading] = useState(false);
 
   // Application decision modal
   const [decisionNote, setDecisionNote] = useState('');
@@ -173,8 +182,17 @@ export function AdminApp() {
             </p>
           </div>
           <form
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
+              setLoginError(null);
+              setLoginLoading(true);
+              const result = await signInSupabaseEmail(adminEmail.trim(), adminPass);
+              const profile = result.user ? await getSupabaseProfile(result.user.id) : null;
+              setLoginLoading(false);
+              if (!result.user || !profile || profile.status !== 'active' || !['platform_owner', 'platform_admin', 'admin'].includes(profile.role)) {
+                setLoginError(result.error || 'هذا الحساب لا يملك صلاحية دخول لوحة الإدارة.');
+                return;
+              }
               setAdminAuthenticated(true);
               setAdminScreen('dashboard');
             }}
@@ -192,8 +210,9 @@ export function AdminApp() {
               value={adminPass}
               onChange={(e) => setAdminPass(e.target.value)}
             />
+            {loginError && <div className="text-xs font-semibold text-[#B54747]">{loginError}</div>}
             <Button type="submit" variant="primary" className="w-full">
-              دخول لوحة الإدارة
+              {loginLoading ? 'جارٍ التحقق...' : 'دخول لوحة الإدارة'}
             </Button>
           </form>
         </div>
@@ -709,6 +728,40 @@ export function AdminApp() {
         return (
           <div className="space-y-4">
             <h1 className="text-xl font-extrabold text-[#252A28]">إدارة المستخدمين</h1>
+            {authProfile?.role === 'platform_owner' && (
+              <form
+                className="bg-white border border-[#E4E7E2] rounded-2xl p-4 space-y-3"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  if (!managerName.trim() || !managerEmail.trim()) return;
+                  setManagerInviteLoading(true);
+                  const result = await inviteTeamMember({ action: 'platform_admin', fullName: managerName.trim(), email: managerEmail.trim() });
+                  setManagerInviteLoading(false);
+                  if (result.ok) {
+                    setManagerName('');
+                    setManagerEmail('');
+                    showToast('تم إرسال دعوة المدير إلى البريد الإلكتروني.', 'success');
+                  } else {
+                    showToast(result.error || 'تعذر إرسال الدعوة.', 'danger');
+                  }
+                }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-extrabold text-[#153D35]">إضافة مدير منصة</h2>
+                    <p className="text-[11px] text-[#78827D] mt-1">سيصل للمدير رابط إنشاء كلمة المرور عبر Supabase Auth.</p>
+                  </div>
+                  <ShieldCheck className="w-5 h-5 text-[#2F7D58]" />
+                </div>
+                <div className="grid md:grid-cols-2 gap-2">
+                  <TextInput label="اسم المدير" value={managerName} onChange={(event) => setManagerName(event.target.value)} />
+                  <TextInput label="بريد المدير" type="email" value={managerEmail} onChange={(event) => setManagerEmail(event.target.value)} />
+                </div>
+                <Button type="submit" variant="primary" disabled={managerInviteLoading}>
+                  {managerInviteLoading ? 'جارٍ إرسال الدعوة...' : 'إرسال دعوة المدير'}
+                </Button>
+              </form>
+            )}
             <div className="bg-white border border-[#E4E7E2] rounded-2xl overflow-x-auto">
               <table className="w-full text-right text-xs">
                 <thead className="bg-[#F6F4EE] border-b border-[#E4E7E2] text-[#78827D]">
@@ -1442,10 +1495,7 @@ export function AdminApp() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => {
-            setAdminAuthenticated(false);
-            setAdminScreen('login');
-          }}
+          onClick={() => void signOut()}
         >
           <LogOut className="w-4 h-4" />
           تسجيل الخروج
